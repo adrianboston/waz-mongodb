@@ -353,7 +353,7 @@ echo This may take a few minutes as the initial journal is preallocated.
 echo
 
 echo Starting MongoDB service...
-sudo service mongod start
+sudo service mongod start >/dev/null 2>&1
 sudo chkconfig mongod on
 
 if $isPrimary; then
@@ -390,7 +390,7 @@ EOF
 	/usr/bin/mongo /tmp/initializeAuthentication.js --verbose > /tmp/creatingMongoClusterAdmin.log 2>&1	
 
 	echo Authentication ready. Restarting MongoDB...
-	sudo service mongod restart
+	sudo service mongod restart >/dev/null 2>&1
 
 	# remove credentials trace
 	rm /tmp/initializeAuthentication.js
