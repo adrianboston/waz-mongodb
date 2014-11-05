@@ -306,6 +306,29 @@ sudo mkdir $mongoDataPath/log
 sudo mkdir $mongoDataPath/db
 sudo chown -R mongod:mongod $mongoDataPath
 
+
+if $isPrimary; then
+	echo Generating replica set security key...
+	openssl rand -base64 753 > $replicaSetKey
+	echo Securely storing replica set key in Azure storage...
+	node updown.js mongodb up $replicaSetKey
+else
+	echo Acquiring replica set security key from the cloud...
+	node updown.js mongodb down $replicaSetKey
+fi
+
+echo Installing replica set key on the machine...
+
+sudo chown mongod:mongod $replicaSetKey
+sudo chmod 0600 $replicaSetKey
+sudo mv $replicaSetKey /etc/$replicaSetKey
+
+echo
+echo About to bring online MongoDB.
+echo This may take a few minutes as the initial journal is preallocated.
+echo
+
+if $isArbiter || !$isUsingDataDisk; then
 # FYI: YAML syntax introduced in MongoDB 2.6
 echo Configuring MongoDB 2.6...
 sudo tee /etc/mongod.conf > /dev/null <<EOF
@@ -330,30 +353,36 @@ storage:
 replication:
     replSetName: "$replicaSetName"
 EOF
-
-if $isPrimary; then
-	echo Generating replica set security key...
-	openssl rand -base64 753 > $replicaSetKey
-	echo Securely storing replica set key in Azure storage...
-	node updown.js mongodb up $replicaSetKey
 else
-	echo Acquiring replica set security key from the cloud...
-	node updown.js mongodb down $replicaSetKey
+# FYI: YAML syntax introduced in MongoDB 2.6
+echo Configuring MongoDB 2.6...
+sudo tee /etc/mongod.conf > /dev/null <<EOF
+systemLog:
+    destination: file
+    path: "$mongoDataPath/log/mongod.log"
+    quiet: true
+    logAppend: true
+processManagement:
+    fork: true
+    pidFilePath: "/var/run/mongodb/mongod.pid"
+net:
+    port: $mongodPort
+security:
+    keyFile: "/etc/$replicaSetKey"
+    authorization: "enabled"
+storage:
+    dbPath: "$mongoDataPath/db"
+    directoryPerDB: true
+    journal:
+        enabled: true
+replication:
+    replSetName: "$replicaSetName"
+EOF
 fi
 
-echo Installing replica set key on the machine...
-
-sudo chown mongod:mongod $replicaSetKey
-sudo chmod 0600 $replicaSetKey
-sudo mv $replicaSetKey /etc/$replicaSetKey
-
-echo
-echo About to bring online MongoDB.
-echo This may take a few minutes as the initial journal is preallocated.
-echo
 
 echo Starting MongoDB service...
-sudo service mongod start >/dev/null 2>&1
+sudo service mongod start
 sudo chkconfig mongod on
 
 if $isPrimary; then
